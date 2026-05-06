@@ -66,6 +66,13 @@ type Config struct {
 	BPFFSRoot              string                   `mapstructure:"bpf_fs_root"`
 	ErrorMode              ErrorMode                `mapstructure:"error_mode"`
 	OBIProcessCtx          bool                     `mapstructure:"obi_process_ctx"`
+	// EnableSWCPUClock enables software cpu-clock perf events for sampling.
+	// This is the default event type used for profiling.
+	EnableSWCPUClock bool `mapstructure:"enable_sw_cpu_clock"`
+	// EnableHWCPUCycles enables hardware cpu-cycles perf events for sampling.
+	// When enabled together with EnableSWCPUClock, both event types are collected concurrently.
+	// Hardware events may not be available in all environments (e.g., VMs without PMU passthrough).
+	EnableHWCPUCycles bool `mapstructure:"enable_hw_cpu_cycles"`
 }
 
 // Validate validates the config.
@@ -136,6 +143,13 @@ func (cfg *Config) Validate() error {
 			return fmt.Errorf("host Agent requires kernel version "+
 				"%d.%d or newer but got %d.%d.%d", minMajor, minMinor, major, minor, patch)
 		}
+	}
+
+	// At least one perf event type must be enabled
+	if !cfg.EnableSWCPUClock && !cfg.EnableHWCPUCycles {
+		return errors.New(
+			"at least one perf event type must be enabled: " +
+				"use --enable-sw-cpu-clock and/or --enable-hw-cpu-cycles")
 	}
 
 	return nil

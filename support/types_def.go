@@ -104,6 +104,12 @@ const (
 	TraceOriginProbe    = C.TRACE_PROBE
 )
 
+const (
+	PerfEventTypeUnknown     = C.PERF_EVENT_TYPE_UNKNOWN
+	PerfEventTypeSWCPUClock  = C.PERF_EVENT_TYPE_SW_CPU_CLOCK
+	PerfEventTypeHWCPUCycles = C.PERF_EVENT_TYPE_HW_CPU_CYCLES
+)
+
 type ApmSpanID C.ApmSpanID
 type ApmTraceID C.ApmTraceID
 type CustomLabel C.CustomLabel

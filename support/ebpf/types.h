@@ -386,6 +386,15 @@ typedef enum TraceOrigin {
   TRACE_PROBE,
 } TraceOrigin;
 
+// PerfEventType identifies the type of perf event that triggered a sample.
+// This allows distinguishing between hardware and software perf events
+// when multiple event types are collected concurrently.
+typedef enum PerfEventType {
+  PERF_EVENT_TYPE_UNKNOWN = 0,
+  PERF_EVENT_TYPE_SW_CPU_CLOCK = 1,   // Software: PERF_COUNT_SW_CPU_CLOCK
+  PERF_EVENT_TYPE_HW_CPU_CYCLES = 2,  // Hardware: PERF_COUNT_HW_CPU_CYCLES
+} PerfEventType;
+
 // Maximum number of unique stack deltas needed on a system. This is based on
 // normal desktop /usr/bin/* and /usr/lib/*.so having about 9700 unique deltas.
 // Can be increased up to 2^15, see also STACK_DELTA_COMMAND_FLAG.
@@ -645,6 +654,10 @@ typedef struct Trace {
 
   // origin indicates the source of the trace.
   TraceOrigin origin;
+
+  // perf_event_type indicates which perf event triggered this sample.
+  // This is used when multiple perf event types are collected concurrently.
+  PerfEventType perf_event_type;
 
   // value stores context-specific data that was collected with the stack.
   // e.g. time in nanoseconds for off-CPU traces

@@ -17,6 +17,7 @@ type TraceEventMeta struct {
 	Timestamp      libpf.UnixTime64
 	CPU            uint32
 	Origin         libpf.Origin
+	PerfEventType  libpf.PerfEventType
 	Value          int64
 	PID, TID       libpf.PID
 	SpanID         libpf.APMSpanID
@@ -78,8 +79,9 @@ type SampleKey struct {
 
 	Hash libpf.TraceHash
 
-	TID int64
-	CPU int64
+	TID           int64
+	CPU           int64
+	PerfEventType libpf.PerfEventType
 
 	SpanID  libpf.APMSpanID
 	TraceID libpf.APMTraceID

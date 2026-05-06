@@ -128,6 +128,21 @@ type Trace struct {
 	Frames       Frames
 }
 
+// PerfEventType identifies the type of perf event that triggered a sample.
+type PerfEventType uint32
+
+// String returns a human-readable string representation of the perf event type.
+func (t PerfEventType) String() string {
+	switch t {
+	case 1: // PerfEventTypeSWCPUClock
+		return "sw_cpu_clock"
+	case 2: // PerfEventTypeHWCPUCycles
+		return "hw_cpu_cycles"
+	default:
+		return "unknown"
+	}
+}
+
 // EbpfTrace represents a stack trace from Ebpf code.
 type EbpfTrace struct {
 	EnvVars          map[String]String
@@ -146,6 +161,7 @@ type EbpfTrace struct {
 	PID              PID
 	NumFrames        uint16
 	Origin           Origin
+	PerfEventType    PerfEventType
 	APMTraceID       APMTraceID
 	APMTransactionID APMTransactionID
 }

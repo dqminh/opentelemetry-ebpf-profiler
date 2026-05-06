@@ -952,8 +952,11 @@ get_usermode_regs(struct pt_regs *ctx, UnwindState *state, bool *has_usermode_re
 
 #endif // TESTING_COREDUMP
 
-static inline EBPF_INLINE int collect_trace(
-  struct pt_regs *ctx, TraceOrigin origin, u32 pid, u32 tid, u64 trace_timestamp, u64 value)
+// collect_trace_with_perf_type collects a stack trace with the specified perf event type.
+// This is the core trace collection function that supports multiple perf event types.
+static inline EBPF_INLINE int collect_trace_with_perf_type(
+  struct pt_regs *ctx, TraceOrigin origin, PerfEventType perf_event_type,
+  u32 pid, u32 tid, u64 trace_timestamp, u64 value)
 {
   // The trace is reused on each call to this function so we have to reset the
   // variables used to maintain state.
@@ -963,12 +966,13 @@ static inline EBPF_INLINE int collect_trace(
     return -1;
   }
 
-  Trace *trace  = &record->trace;
-  trace->origin = origin;
-  trace->pid    = pid;
-  trace->tid    = tid;
-  trace->ktime  = trace_timestamp;
-  trace->value  = value;
+  Trace *trace           = &record->trace;
+  trace->origin          = origin;
+  trace->perf_event_type = perf_event_type;
+  trace->pid             = pid;
+  trace->tid             = tid;
+  trace->ktime           = trace_timestamp;
+  trace->value           = value;
   if (bpf_get_current_comm(&(trace->comm), sizeof(trace->comm)) < 0) {
     increment_metric(metricID_ErrBPFCurrentComm);
   }
@@ -1009,6 +1013,16 @@ exit:
   tail_call(ctx, unwinder);
   DEBUG_PRINT("bpf_tail call failed for %d in native_tracer_entry", unwinder);
   return -1;
+}
+
+// collect_trace is a backward-compatible wrapper that calls collect_trace_with_perf_type
+// with PERF_EVENT_TYPE_UNKNOWN for callers that don't need to track perf event type
+// (e.g., off-CPU profiling, probes).
+static inline EBPF_INLINE int collect_trace(
+  struct pt_regs *ctx, TraceOrigin origin, u32 pid, u32 tid, u64 trace_timestamp, u64 value)
+{
+  return collect_trace_with_perf_type(
+    ctx, origin, PERF_EVENT_TYPE_UNKNOWN, pid, tid, trace_timestamp, value);
 }
 
 #endif

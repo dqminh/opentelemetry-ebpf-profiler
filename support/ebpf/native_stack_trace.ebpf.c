@@ -171,6 +171,8 @@ static EBPF_INLINE int unwind_native(struct pt_regs *ctx)
   return -1;
 }
 
+// native_tracer_entry is the original entry point for backward compatibility.
+// It uses PERF_EVENT_TYPE_UNKNOWN since it doesn't distinguish between event types.
 SEC("perf_event/native_tracer_entry")
 int native_tracer_entry(struct bpf_perf_event_data *ctx)
 {
@@ -190,4 +192,43 @@ int native_tracer_entry(struct bpf_perf_event_data *ctx)
 
   return collect_trace((struct pt_regs *)&ctx->regs, TRACE_SAMPLING, pid, tid, ts, 0);
 }
+
+// native_tracer_entry_sw_cpu_clock is the entry point for software CPU clock events.
+// This is used when collecting samples from PERF_COUNT_SW_CPU_CLOCK events.
+SEC("perf_event/native_tracer_entry_sw_cpu_clock")
+int native_tracer_entry_sw_cpu_clock(struct bpf_perf_event_data *ctx)
+{
+  u64 id  = bpf_get_current_pid_tgid();
+  u32 pid = id >> 32;
+  u32 tid = id & 0xFFFFFFFF;
+
+  if (pid == 0 && filter_idle_frames) {
+    return 0;
+  }
+
+  u64 ts = bpf_ktime_get_ns();
+  return collect_trace_with_perf_type(
+    (struct pt_regs *)&ctx->regs, TRACE_SAMPLING, PERF_EVENT_TYPE_SW_CPU_CLOCK,
+    pid, tid, ts, 0);
+}
+
+// native_tracer_entry_hw_cpu_cycles is the entry point for hardware CPU cycles events.
+// This is used when collecting samples from PERF_COUNT_HW_CPU_CYCLES events.
+SEC("perf_event/native_tracer_entry_hw_cpu_cycles")
+int native_tracer_entry_hw_cpu_cycles(struct bpf_perf_event_data *ctx)
+{
+  u64 id  = bpf_get_current_pid_tgid();
+  u32 pid = id >> 32;
+  u32 tid = id & 0xFFFFFFFF;
+
+  if (pid == 0 && filter_idle_frames) {
+    return 0;
+  }
+
+  u64 ts = bpf_ktime_get_ns();
+  return collect_trace_with_perf_type(
+    (struct pt_regs *)&ctx->regs, TRACE_SAMPLING, PERF_EVENT_TYPE_HW_CPU_CYCLES,
+    pid, tid, ts, 0);
+}
+
 MULTI_USE_FUNC(unwind_native)

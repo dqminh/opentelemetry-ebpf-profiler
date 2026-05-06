@@ -284,6 +284,8 @@ func (p *Pdata) setProfile(
 			semconv.ThreadIDKey, sampleKey.TID)
 		attrMgr.AppendInt(sample.AttributeIndices(),
 			semconv.CPULogicalNumberKey, int64(sampleKey.CPU))
+		attrMgr.AppendOptionalString(sample.AttributeIndices(),
+			attribute.Key("profiling.perf_event.type"), sampleKey.PerfEventType.String())
 
 		if p.ExtraSampleAttrProd != nil {
 			extra := p.ExtraSampleAttrProd.ExtraSampleAttrs(attrMgr, sampleKey.ExtraMeta)

@@ -132,6 +132,12 @@ type Tracer struct {
 	// probabilisticThreshold holds the threshold for probabilistic profiling.
 	probabilisticThreshold uint
 
+	// enableSWCPUClock enables software cpu-clock perf events for sampling.
+	enableSWCPUClock bool
+
+	// enableHWCPUCycles enables hardware cpu-cycles perf events for sampling.
+	enableHWCPUCycles bool
+
 	// customLabels validates custom label keys/values pulled from eBPF and
 	// tracks how many were dropped due to invalid UTF-8.
 	customLabels customLabelValidator
@@ -201,6 +207,10 @@ type Config struct {
 	BPFFSRoot string
 	// OBIProcessCtx enable the use of a known shared eBPF map with OBI.
 	OBIProcessCtx bool
+	// EnableSWCPUClock enables software cpu-clock perf events for sampling.
+	EnableSWCPUClock bool
+	// EnableHWCPUCycles enables hardware cpu-cycles perf events for sampling.
+	EnableHWCPUCycles bool
 }
 
 // hookPoint specifies the group and name of the hooked point in the kernel.
@@ -285,6 +295,8 @@ func NewTracer(ctx context.Context, cfg *Config) (*Tracer, error) {
 		samplesPerSecond:       cfg.SamplesPerSecond,
 		probabilisticInterval:  cfg.ProbabilisticInterval,
 		probabilisticThreshold: cfg.ProbabilisticThreshold,
+		enableSWCPUClock:       cfg.EnableSWCPUClock,
+		enableHWCPUCycles:      cfg.EnableHWCPUCycles,
 		done:                   make(chan libpf.Void),
 	}
 
@@ -451,7 +463,7 @@ func initializeMapsAndPrograms(kmod *kallsyms.Module, cfg *Config) (
 	}
 
 	if err = loadPerfUnwinders(coll, ebpfProgs, ebpfMaps["perf_progs"], tailCallProgs,
-		cfg.BPFVerifierLogLevel); err != nil {
+		cfg.BPFVerifierLogLevel, cfg.EnableSWCPUClock, cfg.EnableHWCPUCycles); err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to load perf eBPF programs: %v", err)
 	}
 
@@ -765,13 +777,13 @@ func schedTimesSize(threshold uint32) uint32 {
 // loadPerfUnwinders loads all perf eBPF Programs and their tail call targets.
 func loadPerfUnwinders(coll *cebpf.CollectionSpec, ebpfProgs map[string]*cebpf.Program,
 	tailcallMap *cebpf.Map, tailCallProgs []progLoaderHelper,
-	bpfVerifierLogLevel uint32,
+	bpfVerifierLogLevel uint32, enableSWCPUClock, enableHWCPUCycles bool,
 ) error {
 	programOptions := cebpf.ProgramOptions{
 		LogLevel: cebpf.LogLevel(bpfVerifierLogLevel),
 	}
 
-	progs := make([]progLoaderHelper, len(tailCallProgs)+2)
+	progs := make([]progLoaderHelper, len(tailCallProgs)+4)
 	copy(progs, tailCallProgs)
 
 	schedProcessFree := schedProcessFreeHookName(libpf.MapKeysToSet(coll.Programs))
@@ -785,6 +797,16 @@ func loadPerfUnwinders(coll *cebpf.CollectionSpec, ebpfProgs map[string]*cebpf.P
 			name:             "native_tracer_entry",
 			noTailCallTarget: true,
 			enable:           true,
+		},
+		progLoaderHelper{
+			name:             "native_tracer_entry_sw_cpu_clock",
+			noTailCallTarget: true,
+			enable:           enableSWCPUClock,
+		},
+		progLoaderHelper{
+			name:             "native_tracer_entry_hw_cpu_cycles",
+			noTailCallTarget: true,
+			enable:           enableHWCPUCycles,
 		})
 
 	for _, unwindProg := range progs {
@@ -1080,6 +1102,7 @@ func (t *Tracer) loadBpfTrace(raw []byte) (*libpf.EbpfTrace, error) {
 		PID:              pid,
 		TID:              libpf.PID(ptr.Tid),
 		Origin:           libpf.Origin(ptr.Origin),
+		PerfEventType:    libpf.PerfEventType(ptr.Perf_event_type),
 		Value:            int64(ptr.Value),
 		KTime:            int64(ptr.Ktime),
 		CpuID:            ptr.Cpu_id,
@@ -1204,17 +1227,6 @@ func terminatePerfEvents(events []*perf.Event) {
 // entry point is always the native tracer. The native tracer will determine when to invoke the
 // interpreter tracers based on address range information.
 func (t *Tracer) AttachTracer() error {
-	tracerProg, ok := t.ebpfProgs["native_tracer_entry"]
-	if !ok {
-		return errors.New("entry program is not available")
-	}
-
-	perfAttribute := new(perf.Attr)
-	perfAttribute.SetSampleFreq(uint64(t.samplesPerSecond))
-	if err := perf.CPUClock.Configure(perfAttribute); err != nil {
-		return fmt.Errorf("failed to configure software perf event: %v", err)
-	}
-
 	onlineCPUs, err := onlineCPUsOnce()
 	if err != nil {
 		return fmt.Errorf("failed to get online cpus: %w", err)
@@ -1222,14 +1234,61 @@ func (t *Tracer) AttachTracer() error {
 
 	events := t.perfEntrypoints.WLock()
 	defer t.perfEntrypoints.WUnlock(&events)
-	for _, id := range onlineCPUs {
+
+	// Attach software cpu-clock perf events if enabled.
+	if t.enableSWCPUClock {
+		if err := t.attachPerfEvents(events, onlineCPUs,
+			"native_tracer_entry_sw_cpu_clock", perf.CPUClock); err != nil {
+			terminatePerfEvents(*events)
+			return fmt.Errorf("failed to attach software cpu-clock perf events: %v", err)
+		}
+	}
+
+	// Attach hardware cpu-cycles perf events if enabled.
+	// Hardware events may not be available in all environments (e.g., VMs without PMU passthrough),
+	// so we log an error but don't fail the service.
+	if t.enableHWCPUCycles {
+		if err := t.attachPerfEvents(events, onlineCPUIDs,
+			"native_tracer_entry_hw_cpu_cycles", perf.CPUCycles); err != nil {
+			log.Errorf("Failed to attach hardware cpu-cycles perf events (hardware events "+
+				"may not be available in this environment): %v", err)
+		}
+	}
+
+	// Ensure at least one perf event type was successfully attached.
+	if len(*events) == 0 {
+		return errors.New("no perf events were successfully attached; " +
+			"at least one event type must be available")
+	}
+
+	return nil
+}
+
+// perfEventConfigurer is an interface for types that can configure perf attributes.
+type perfEventConfigurer interface {
+	Configure(*perf.Attr) error
+}
+
+// attachPerfEvents attaches an eBPF program to perf events on all online CPUs.
+func (t *Tracer) attachPerfEvents(events *[]*perf.Event, cpuIDs []int,
+	progName string, eventType perfEventConfigurer) error {
+	tracerProg, ok := t.ebpfProgs[progName]
+	if !ok {
+		return fmt.Errorf("entry program %q is not available", progName)
+	}
+
+	perfAttribute := new(perf.Attr)
+	perfAttribute.SetSampleFreq(uint64(t.samplesPerSecond))
+	if err := eventType.Configure(perfAttribute); err != nil {
+		return fmt.Errorf("failed to configure perf event: %v", err)
+	}
+
+	for _, id := range cpuIDs {
 		perfEvent, err := perf.Open(perfAttribute, perf.AllThreads, id, nil)
 		if err != nil {
-			terminatePerfEvents(*events)
 			return fmt.Errorf("failed to attach to perf event on CPU %d: %v", id, err)
 		}
 		if err := perfEvent.SetBPF(uint32(tracerProg.FD())); err != nil {
-			terminatePerfEvents(*events)
 			return fmt.Errorf("failed to attach eBPF program to perf event: %v", err)
 		}
 		*events = append(*events, perfEvent)
