@@ -22,6 +22,7 @@ func validConfig() *Config {
 		ProbabilisticInterval:  1 * time.Minute,
 		ProbabilisticThreshold: 100,
 		NoKernelVersionCheck:   true,
+		ErrorMode:              PropagateError,
 	}
 }
 
@@ -196,4 +197,12 @@ func TestValidateErrorMode(t *testing.T) {
 			require.Equal(t, tt.want, cfg.ErrorMode)
 		})
 	}
+}
+
+func TestValidateFilterMinProcessAge(t *testing.T) {
+	cfg := validConfig()
+	cfg.FilterMinProcessAge = -1 * time.Second
+
+	err := xconfmap.Validate(cfg)
+	require.Error(t, err)
 }
