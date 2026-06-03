@@ -31,6 +31,7 @@ const (
 	FrameMarkerLuaJIT  = C.FRAME_MARKER_LUAJIT
 	FrameMarkerBEAM    = C.FRAME_MARKER_BEAM
 	FrameMarkerGo      = C.FRAME_MARKER_GO
+	FrameMarkerLBR     = C.FRAME_MARKER_LBR
 )
 
 const (
@@ -105,10 +106,14 @@ const (
 )
 
 const (
-	PerfEventTypeUnknown     = C.PERF_EVENT_TYPE_UNKNOWN
-	PerfEventTypeSWCPUClock  = C.PERF_EVENT_TYPE_SW_CPU_CLOCK
-	PerfEventTypeHWCPUCycles = C.PERF_EVENT_TYPE_HW_CPU_CYCLES
+	PerfEventTypeUnknown        = C.PERF_EVENT_TYPE_UNKNOWN
+	PerfEventTypeSWCPUClock     = C.PERF_EVENT_TYPE_SW_CPU_CLOCK
+	PerfEventTypeHWCPUCycles    = C.PERF_EVENT_TYPE_HW_CPU_CYCLES
+	PerfEventTypeAMDBRS         = C.PERF_EVENT_TYPE_AMD_BRS
+	PerfEventTypeHWCPUCyclesLBR = C.PERF_EVENT_TYPE_HW_CPU_CYCLES_LBR
 )
+
+const MaxBranchRecords = C.MAX_BRANCH_RECORDS
 
 type ApmSpanID C.ApmSpanID
 type ApmTraceID C.ApmTraceID
@@ -125,6 +130,9 @@ type SystemAnalysis C.SystemAnalysis
 type TSDInfo C.TSDInfo
 type DTVInfo C.DTVInfo
 type Trace C.Trace
+type LBRTrace C.LBRTrace
+type LBRFrameEntry C.LBRFrameEntry
+type PerfBranchEntry C.struct_perf_branch_entry
 type UnwindInfo C.UnwindInfo
 
 type ApmIntProcInfo C.ApmIntProcInfo
@@ -141,6 +149,7 @@ type V8ProcInfo C.V8ProcInfo
 const (
 	Sizeof_StackDelta = C.sizeof_StackDelta
 	Sizeof_Trace      = C.sizeof_Trace
+	Sizeof_LBRTrace   = C.sizeof_LBRTrace
 
 	sizeof_ApmIntProcInfo = C.sizeof_ApmIntProcInfo
 	sizeof_DotnetProcInfo = C.sizeof_DotnetProcInfo

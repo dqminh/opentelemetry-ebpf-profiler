@@ -231,4 +231,30 @@ int native_tracer_entry_hw_cpu_cycles(struct bpf_perf_event_data *ctx)
     pid, tid, ts, 0);
 }
 
+// native_tracer_entry_amd_brs is the entry point for AMD Family 0x19 Branch
+// Sampling (raw perf event 0xc4). AMD BRS samples carry no useful PC, so the
+// handler skips call-stack collection entirely; PROG_UNWIND_STOP later captures
+// the CPU's Last Branch Records and emits them as a standalone LBRTrace.
+SEC("perf_event/native_tracer_entry_amd_brs")
+int native_tracer_entry_amd_brs(struct bpf_perf_event_data *ctx)
+{
+  u64 id  = bpf_get_current_pid_tgid();
+  u32 pid = id >> 32;
+  u32 tid = id & 0xFFFFFFFF;
+
+  if (pid == 0 && filter_idle_frames) {
+    return 0;
+  }
+
+  u64 ts = bpf_ktime_get_ns();
+  if (collect_lbr_only_trace(ctx, PERF_EVENT_TYPE_AMD_BRS, pid, tid, ts) < 0) {
+    return -1;
+  }
+  // PROG_UNWIND_STOP runs the common send_trace() epilogue including APM/OTel
+  // ID enrichment.
+  tail_call(ctx, PROG_UNWIND_STOP);
+  DEBUG_PRINT("bpf_tail call failed for PROG_UNWIND_STOP in native_tracer_entry_amd_brs");
+  return -1;
+}
+
 MULTI_USE_FUNC(unwind_native)

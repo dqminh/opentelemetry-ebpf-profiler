@@ -25,6 +25,7 @@ const (
 	FrameMarkerLuaJIT  = 0xd
 	FrameMarkerBEAM    = 0xc
 	FrameMarkerGo      = 0xb
+	FrameMarkerLBR     = 0xe
 )
 
 const (
@@ -96,10 +97,14 @@ const (
 )
 
 const (
-	PerfEventTypeUnknown     = 0x0
-	PerfEventTypeSWCPUClock  = 0x1
-	PerfEventTypeHWCPUCycles = 0x2
+	PerfEventTypeUnknown        = 0x0
+	PerfEventTypeSWCPUClock     = 0x1
+	PerfEventTypeHWCPUCycles    = 0x2
+	PerfEventTypeAMDBRS         = 0x3
+	PerfEventTypeHWCPUCyclesLBR = 0x4
 )
+
+const MaxBranchRecords = 0x20
 
 type ApmSpanID [8]byte
 type ApmTraceID [16]byte
@@ -176,6 +181,31 @@ type Trace struct {
 	Value              uint64
 	Cpu_id             uint32
 	Frame_data         [3072]uint64
+}
+type LBRTrace struct {
+	Pid                uint32
+	Tid                uint32
+	Ktime              uint64
+	Comm               [16]uint8
+	Apm_transaction_id [8]byte
+	Apm_trace_id       [16]byte
+	Custom_labels      CustomLabelsArray
+	Frame_data_len     uint16
+	Num_frames         uint16
+	Num_kernel_frames  uint16
+	Origin             uint32
+	Perf_event_type    uint32
+	Nr                 uint32
+	Entries            [32]LBRFrameEntry
+}
+type LBRFrameEntry struct {
+	From uint64
+	To   uint64
+}
+type PerfBranchEntry struct {
+	From      uint64
+	To        uint64
+	Pad_cgo_0 [8]byte
 }
 type UnwindInfo struct {
 	Flags       uint8
@@ -338,7 +368,8 @@ type V8ProcInfo struct {
 
 const (
 	Sizeof_StackDelta = 0x4
-	Sizeof_Trace      = 0x62d8
+	Sizeof_Trace      = 0x62e0
+	Sizeof_LBRTrace   = 0x4d0
 
 	sizeof_ApmIntProcInfo = 0x8
 	sizeof_DotnetProcInfo = 0x4

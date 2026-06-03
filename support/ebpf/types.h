@@ -390,9 +390,17 @@ typedef enum TraceOrigin {
 // This allows distinguishing between hardware and software perf events
 // when multiple event types are collected concurrently.
 typedef enum PerfEventType {
-  PERF_EVENT_TYPE_UNKNOWN = 0,
-  PERF_EVENT_TYPE_SW_CPU_CLOCK = 1,   // Software: PERF_COUNT_SW_CPU_CLOCK
-  PERF_EVENT_TYPE_HW_CPU_CYCLES = 2,  // Hardware: PERF_COUNT_HW_CPU_CYCLES
+  PERF_EVENT_TYPE_UNKNOWN       = 0,
+  PERF_EVENT_TYPE_SW_CPU_CLOCK  = 1, // Software: PERF_COUNT_SW_CPU_CLOCK
+  PERF_EVENT_TYPE_HW_CPU_CYCLES = 2, // Hardware: PERF_COUNT_HW_CPU_CYCLES
+  // AMD Family 0x19 Branch Sampling. Raw perf event 0xc4 with period-based
+  // sampling. The sample carries no useful PC, so the eBPF handler only
+  // collects LBR data via bpf_read_branch_records().
+  PERF_EVENT_TYPE_AMD_BRS = 3,
+  // Marks an LBRTrace companion emitted alongside a HW_CPU_CYCLES call-stack
+  // trace. Lets userspace tell an LBRTrace message apart from a Trace message
+  // on the shared ringbuffer (AMD_BRS is also always an LBRTrace).
+  PERF_EVENT_TYPE_HW_CPU_CYCLES_LBR = 4,
 } PerfEventType;
 
 // Maximum number of unique stack deltas needed on a system. This is based on
@@ -678,6 +686,41 @@ typedef struct Trace {
   // 'frame_data_len' elements of 'frame_data' are sent.
 } Trace;
 
+// LBRFrameEntry carries raw runtime VAs. Mirrors perf_branch_entry layout.
+typedef struct LBRFrameEntry {
+  u64 from;
+  u64 to;
+} LBRFrameEntry;
+
+// LBRTrace carries Last Branch Records as a standalone message on the same
+// trace_events ringbuffer as Trace. Its header is byte-identical to Trace up to
+// and including perf_event_type, so userspace can read perf_event_type at a
+// fixed offset to decide which layout to parse. Only the first 'nr' entries are
+// sent. perf_event_type is PERF_EVENT_TYPE_AMD_BRS or
+// PERF_EVENT_TYPE_HW_CPU_CYCLES_LBR.
+typedef struct LBRTrace {
+  u32 pid;
+  u32 tid;
+  u64 ktime;
+  u8 comm[COMM_LEN];
+  ApmSpanID apm_transaction_id;
+  ApmTraceID apm_trace_id;
+  CustomLabelsArray custom_labels;
+  u16 frame_data_len;
+  u16 num_frames;
+  u16 num_kernel_frames;
+  TraceOrigin origin;
+  PerfEventType perf_event_type;
+  // Number of valid entries (<= MAX_BRANCH_RECORDS).
+  u32 nr;
+  // entries must be last: send_lbr_trace only emits the first 'nr' of them.
+  LBRFrameEntry entries[MAX_BRANCH_RECORDS];
+} LBRTrace;
+
+_Static_assert(
+  __builtin_offsetof(LBRTrace, perf_event_type) == __builtin_offsetof(Trace, perf_event_type),
+  "LBRTrace header must match Trace up to perf_event_type");
+
 // Container for unwinding state
 typedef struct UnwindState {
   // CPU register state
@@ -841,6 +884,14 @@ typedef struct CustomLabelsState {
 typedef struct PerCPURecord {
   // The output record, including the stack being built.
   Trace trace;
+  // Scratch buffer for the LBR companion message. Filled and sent by
+  // send_lbr_trace().
+  LBRTrace lbr_trace;
+  // Raw branch records as written by bpf_read_branch_records(). send_lbr_trace()
+  // reads these and translates each endpoint into lbr_trace.entries. Kept off
+  // the BPF stack (768 bytes would overflow the 512-byte limit) by living in
+  // this PERCPU map value.
+  struct perf_branch_entry lbr_raw[MAX_BRANCH_RECORDS];
   // The current unwind state.
   UnwindState state;
   // The current Perl unwinder state

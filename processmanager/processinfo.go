@@ -878,6 +878,24 @@ func (pm *ProcessManager) findMappingForTrace(pid libpf.PID, fid host.FileID,
 	return libpf.FrameMapping{}
 }
 
+// findMappingByAddress locates the mapping containing a raw runtime VA.
+func (pm *ProcessManager) findMappingByAddress(pid libpf.PID, addr libpf.Address) libpf.FrameMapping {
+	pm.mu.RLock()
+	procInfo, ok := pm.pidToProcessInfo[pid]
+	pm.mu.RUnlock()
+	if !ok {
+		return libpf.FrameMapping{}
+	}
+
+	for i := range procInfo.mappings {
+		m := &procInfo.mappings[i]
+		if m.Vaddr <= addr && addr < m.Vaddr+libpf.Address(m.Length) {
+			return m.FrameMapping
+		}
+	}
+	return libpf.FrameMapping{}
+}
+
 func (pm *ProcessManager) ProcessedUntil(traceCaptureKTime times.KTime) {
 	var err error
 	defer func() {

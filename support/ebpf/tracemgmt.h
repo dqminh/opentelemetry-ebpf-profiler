@@ -7,6 +7,7 @@
 #include "errors.h"
 #include "extmaps.h"
 #include "frametypes.h"
+#include "lbr.h"
 #include "types.h"
 
 #if defined(TESTING_COREDUMP)
@@ -539,6 +540,49 @@ static inline EBPF_INLINE void send_trace(UNUSED void *ctx, Trace *trace)
   }
 }
 
+// send_lbr_trace emits raw LBR entries to userspace for address resolution.
+// Must only be called from perf_event programs.
+static inline EBPF_INLINE void send_lbr_trace(void *ctx, PerCPURecord *record)
+{
+  LBRTrace *lbr = &record->lbr_trace;
+
+  int n = collect_lbr_stack(ctx, record->lbr_raw);
+  if (n <= 0) {
+    return;
+  }
+  if (n > MAX_BRANCH_RECORDS) {
+    n = MAX_BRANCH_RECORDS;
+  }
+
+  Trace *trace            = &record->trace;
+  lbr->pid                = trace->pid;
+  lbr->tid                = trace->tid;
+  lbr->ktime              = trace->ktime;
+  __builtin_memcpy(lbr->comm, trace->comm, sizeof(lbr->comm));
+  lbr->apm_transaction_id = trace->apm_transaction_id;
+  lbr->apm_trace_id       = trace->apm_trace_id;
+  lbr->custom_labels      = trace->custom_labels;
+  lbr->frame_data_len     = 0;
+  lbr->num_frames         = 0;
+  lbr->num_kernel_frames  = 0;
+  lbr->origin             = trace->origin;
+  lbr->perf_event_type    = (trace->perf_event_type == PERF_EVENT_TYPE_AMD_BRS)
+                                ? PERF_EVENT_TYPE_AMD_BRS
+                                : PERF_EVENT_TYPE_HW_CPU_CYCLES_LBR;
+  lbr->nr                 = n;
+
+  __builtin_memcpy(lbr->entries, record->lbr_raw, n * sizeof(lbr->entries[0]));
+
+  u32 nr = n;
+  if (nr > MAX_BRANCH_RECORDS) {
+    nr = MAX_BRANCH_RECORDS;
+  }
+  const u64 send_size = sizeof(LBRTrace) - sizeof(lbr->entries) + sizeof(lbr->entries[0]) * nr;
+  if (bpf_ringbuf_output(&trace_events, lbr, send_size, BPF_RB_NO_WAKEUP) < 0) {
+    increment_metric(metricID_BPFRingbufOutputErr);
+  }
+}
+
 // is_kernel_address checks if the given address looks like virtual address to kernel memory.
 static inline EBPF_INLINE bool is_kernel_address(u64 addr)
 {
@@ -1023,6 +1067,37 @@ static inline EBPF_INLINE int collect_trace(
 {
   return collect_trace_with_perf_type(
     ctx, origin, PERF_EVENT_TYPE_UNKNOWN, pid, tid, trace_timestamp, value);
+}
+
+// collect_lbr_only_trace initialises a Trace for a perf event whose samples
+// carry no useful PC and only exist to deliver branch records (e.g. AMD BRS
+// raw event 0xc4). It performs no call-stack unwinding; the branch records are
+// captured later by send_lbr_trace().
+//
+// The caller is expected to tail-call PROG_UNWIND_STOP after this returns so
+// the LBRTrace is emitted via send_lbr_trace() (which also handles APM/OTel ID
+// enrichment of the shared header).
+static inline EBPF_INLINE int collect_lbr_only_trace(
+  UNUSED struct bpf_perf_event_data *ctx, PerfEventType perf_event_type, u32 pid, u32 tid,
+  u64 trace_timestamp)
+{
+  PerCPURecord *record = get_pristine_per_cpu_record();
+  if (!record) {
+    return -1;
+  }
+
+  Trace *trace           = &record->trace;
+  trace->origin          = TRACE_SAMPLING;
+  trace->perf_event_type = perf_event_type;
+  trace->pid             = pid;
+  trace->tid             = tid;
+  trace->ktime           = trace_timestamp;
+  trace->value           = 0;
+  if (bpf_get_current_comm(&(trace->comm), sizeof(trace->comm)) < 0) {
+    increment_metric(metricID_ErrBPFCurrentComm);
+  }
+
+  return 0;
 }
 
 #endif

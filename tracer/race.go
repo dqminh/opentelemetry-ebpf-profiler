@@ -18,3 +18,10 @@ func traceFromRaw(raw []byte) *support.Trace {
 	copy(fullSizeCopy, raw)
 	return (*support.Trace)(unsafe.Pointer(unsafe.SliceData(fullSizeCopy)))
 }
+
+func lbrTraceFromRaw(raw []byte) *support.LBRTrace {
+	// workaround for "fatal error: checkptr: converted pointer straddles multiple allocations"
+	fullSizeCopy := make([]byte, unsafe.Sizeof(support.LBRTrace{}))
+	copy(fullSizeCopy, raw)
+	return (*support.LBRTrace)(unsafe.Pointer(unsafe.SliceData(fullSizeCopy)))
+}

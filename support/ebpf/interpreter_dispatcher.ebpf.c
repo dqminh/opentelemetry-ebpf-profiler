@@ -286,7 +286,10 @@ static EBPF_INLINE void maybe_add_apm_info(Trace *trace)
 }
 
 // unwind_stop is the tail call destination for PROG_UNWIND_STOP.
-static EBPF_INLINE int unwind_stop(struct pt_regs *ctx)
+//
+// The `lbr_capable` must be true for the perf_event program and false for the
+// kprobe variant where bpf_read_branch_records is not allowed.
+static EBPF_INLINE int unwind_stop(struct pt_regs *ctx, const bool lbr_capable)
 {
   PerCPURecord *record = get_per_cpu_record();
   if (!record)
@@ -300,6 +303,13 @@ static EBPF_INLINE int unwind_stop(struct pt_regs *ctx)
     trace->apm_transaction_id.as_int == 0) {
     // Populate OTel span/trace ID only if span/trace ID is not yet set.
     maybe_add_otel_span_trace_id(trace);
+  }
+
+  // AMD BRS samples carry no call stack, so we do not need to call send_trace
+  if (lbr_capable && trace->perf_event_type == PERF_EVENT_TYPE_AMD_BRS &&
+      trace->frame_data_len == 0) {
+    send_lbr_trace(ctx, record);
+    return 0;
   }
 
   // If the stack is otherwise empty, push an error for that: we should
@@ -350,6 +360,12 @@ static EBPF_INLINE int unwind_stop(struct pt_regs *ctx)
   }
   // TEMPORARY HACK END
 
+  // Emit the LBR companion message for HW cpu-cycles samples that carry branch
+  // records, before the go-labels tail call below which may not return.
+  if (lbr_capable && trace->perf_event_type == PERF_EVENT_TYPE_HW_CPU_CYCLES) {
+    send_lbr_trace(ctx, record);
+  }
+
   // Must be last since it may not return (it will call send_trace).
   maybe_add_go_custom_labels(ctx, record);
 
@@ -357,6 +373,21 @@ static EBPF_INLINE int unwind_stop(struct pt_regs *ctx)
 
   return 0;
 }
-MULTI_USE_FUNC(unwind_stop)
+// Hand-rolled MULTI_USE_FUNC-style wrappers for unwind_stop so each program
+// variant can pass a different compile-time `lbr_capable` constant. The
+// perf_event variant enables the bpf_read_branch_records() call path; the
+// kprobe variant elides it so the verifier never sees the helper for a
+// program type that does not allow it.
+SEC("perf_event/unwind_stop")
+int EBPF_INLINE perf_unwind_stop(struct pt_regs *ctx)
+{
+  return unwind_stop(ctx, true);
+}
+
+SEC("kprobe/unwind_stop")
+int EBPF_INLINE kprobe_unwind_stop(struct pt_regs *ctx)
+{
+  return unwind_stop(ctx, false);
+}
 
 char _license[] SEC("license") = "GPL";

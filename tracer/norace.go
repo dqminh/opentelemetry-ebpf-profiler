@@ -15,3 +15,7 @@ import (
 func traceFromRaw(raw []byte) *support.Trace {
 	return (*support.Trace)(unsafe.Pointer(unsafe.SliceData(raw)))
 }
+
+func lbrTraceFromRaw(raw []byte) *support.LBRTrace {
+	return (*support.LBRTrace)(unsafe.Pointer(unsafe.SliceData(raw)))
+}

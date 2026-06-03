@@ -73,6 +73,9 @@ type Config struct {
 	// When enabled together with EnableSWCPUClock, both event types are collected concurrently.
 	// Hardware events may not be available in all environments (e.g., VMs without PMU passthrough).
 	EnableHWCPUCycles bool `mapstructure:"enable_hw_cpu_cycles"`
+	// EnableBranchSampling enables LBR for Intel/Zen4+ when using `EnableHWCPUCycles`,
+	// and AMD BRS for older Zen if supported.
+	EnableBranchSampling bool `mapstructure:"enable_branch_sampling"`
 }
 
 // Validate validates the config.

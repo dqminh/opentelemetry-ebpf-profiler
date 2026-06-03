@@ -138,21 +138,35 @@ func (t PerfEventType) String() string {
 		return "sw_cpu_clock"
 	case 2: // PerfEventTypeHWCPUCycles
 		return "hw_cpu_cycles"
+	case 3: // PerfEventTypeAMDBRS
+		return "amd_brs"
+	case 4: // PerfEventTypeHWCPUCyclesLBR
+		return "hw_cpu_cycles_lbr"
 	default:
 		return "unknown"
 	}
 }
 
+// LBREntry is a single Last Branch Record entry with raw runtime VAs.
+// Userspace resolves these to file-space addresses via process mappings.
+type LBREntry struct {
+	From uint64
+	To   uint64
+}
+
 // EbpfTrace represents a stack trace from Ebpf code.
 type EbpfTrace struct {
-	EnvVars          map[String]String
-	ProcessName      String
-	ExecutablePath   String
-	ContainerID      String
-	CustomLabels     map[String]String
-	Comm             Comm
-	FrameData        []uint64
-	KernelFrames     Frames
+	EnvVars        map[String]String
+	ProcessName    String
+	ExecutablePath String
+	ContainerID    String
+	CustomLabels   map[String]String
+	Comm           Comm
+	FrameData      []uint64
+	KernelFrames   Frames
+	// LBR holds Last Branch Record entries for LBR traces (AMD BRS or
+	// HW cpu-cycles LBR companions). Empty for regular call-stack traces.
+	LBR              []LBREntry
 	FrameDataBuf     [3072]uint64
 	Value            int64
 	KTime            int64

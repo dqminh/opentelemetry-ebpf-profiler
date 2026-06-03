@@ -273,6 +273,38 @@ func (pm *ProcessManager) convertFrame(pid libpf.PID, ef libpf.EbpfFrame, dst *l
 	return false
 }
 
+// appendLBRFrames resolves raw LBR VAs and appends frames (to, from order for pprof).
+func (pm *ProcessManager) appendLBRFrames(pid libpf.PID, e libpf.LBREntry, dst *libpf.Frames) {
+	// Skip kernel addresses
+	if e.From&0xFF00000000000000 != 0 || e.To&0xFF00000000000000 != 0 {
+		return
+	}
+
+	toMapping := pm.findMappingByAddress(pid, libpf.Address(e.To))
+	fromMapping := pm.findMappingByAddress(pid, libpf.Address(e.From))
+
+	// Skip if either endpoint is unmapped
+	if !toMapping.Valid() || !fromMapping.Valid() {
+		return
+	}
+
+	toMD := toMapping.Value()
+	toOffset := libpf.Address(e.To) - toMD.Start + libpf.Address(toMD.FileOffset)
+	dst.Append(&libpf.Frame{
+		Type:            libpf.LBRFrame,
+		AddressOrLineno: libpf.AddressOrLineno(toOffset),
+		Mapping:         toMapping,
+	})
+
+	fromMD := fromMapping.Value()
+	fromOffset := libpf.Address(e.From) - fromMD.Start + libpf.Address(fromMD.FileOffset)
+	dst.Append(&libpf.Frame{
+		Type:            libpf.LBRFrame,
+		AddressOrLineno: libpf.AddressOrLineno(fromOffset),
+		Mapping:         fromMapping,
+	})
+}
+
 func (pm *ProcessManager) maybeNotifyAPMAgent(
 	rawTrace *libpf.EbpfTrace, trace *libpf.Trace, count uint16,
 ) string {
@@ -385,6 +417,11 @@ func (pm *ProcessManager) HandleTrace(bpfTrace *libpf.EbpfTrace) {
 	if cacheHit != 0 {
 		pm.frameCacheHit.Add(cacheHit)
 	}
+
+	for i := range bpfTrace.LBR {
+		pm.appendLBRFrames(pid, bpfTrace.LBR[i], &trace.Frames)
+	}
+
 	pm.mu.RLock()
 	// Release resources that were used to symbolize this stack.
 	for _, instance := range pm.interpreters[pid] {
