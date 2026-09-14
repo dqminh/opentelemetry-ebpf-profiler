@@ -116,6 +116,7 @@ struct pt_regs {
 
 struct bpf_perf_event_data {
   struct pt_regs regs;
+  u64 sample_period;
 };
 
 // The following works with clang and gcc.

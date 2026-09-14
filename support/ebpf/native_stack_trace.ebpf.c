@@ -195,8 +195,8 @@ static EBPF_INLINE int unwind_native(struct pt_regs *ctx)
   return -1;
 }
 
-static inline int
-native_tracer_entry_impl(struct bpf_perf_event_data *ctx, u16 origin, bool is_amd_brs)
+static inline int native_tracer_entry_impl(
+  struct bpf_perf_event_data *ctx, u16 origin, bool is_amd_brs, u64 sample_period)
 {
   u32 pid = 0;
   u32 tid = 0;
@@ -213,25 +213,25 @@ native_tracer_entry_impl(struct bpf_perf_event_data *ctx, u16 origin, bool is_am
     return collect_lbr_only_trace((struct pt_regs *)&ctx->regs, origin, pid, tid, ts);
   }
 
-  return collect_trace((struct pt_regs *)&ctx->regs, origin, pid, tid, ts, 0);
+  return collect_trace((struct pt_regs *)&ctx->regs, origin, pid, tid, ts, 0, sample_period);
 }
 
 SEC("perf_event/native_tracer_entry_sw_cpu_clock")
 int native_tracer_entry_sw_cpu_clock(struct bpf_perf_event_data *ctx)
 {
-  return native_tracer_entry_impl(ctx, origin_id_sampling, false);
+  return native_tracer_entry_impl(ctx, origin_id_sampling, false, ctx->sample_period);
 }
 
 SEC("perf_event/native_tracer_entry_hw_cpu_cycles")
 int native_tracer_entry_hw_cpu_cycles(struct bpf_perf_event_data *ctx)
 {
-  return native_tracer_entry_impl(ctx, origin_id_hw_cpu_cycles, false);
+  return native_tracer_entry_impl(ctx, origin_id_hw_cpu_cycles, false, ctx->sample_period);
 }
 
 SEC("perf_event/native_tracer_entry_amd_brs")
 int native_tracer_entry_amd_brs(struct bpf_perf_event_data *ctx)
 {
-  return native_tracer_entry_impl(ctx, origin_id_amd_brs, true);
+  return native_tracer_entry_impl(ctx, origin_id_amd_brs, true, 0);
 }
 
 MULTI_USE_FUNC(unwind_native)

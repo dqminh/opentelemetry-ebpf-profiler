@@ -27,6 +27,7 @@ import (
 	"github.com/cilium/ebpf/link"
 	"github.com/elastic/go-perf"
 	"github.com/klauspost/cpuid/v2"
+
 	"go.opentelemetry.io/ebpf-profiler/internal/linux"
 	"go.opentelemetry.io/ebpf-profiler/internal/log"
 	"go.opentelemetry.io/ebpf-profiler/interpreter/interpreterconfig"
@@ -1053,6 +1054,7 @@ func (t *Tracer) loadBpfTrace(raw []byte) (*libpf.EbpfTrace, error) {
 		TID:              libpf.PID(ptr.Tid),
 		Origin:           ptr.Origin,
 		Value:            int64(ptr.Value),
+		SamplePeriod:     ptr.Sample_period,
 		KTime:            int64(ptr.Ktime),
 		CpuID:            ptr.Cpu_id,
 	}

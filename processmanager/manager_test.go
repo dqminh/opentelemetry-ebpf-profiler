@@ -36,10 +36,12 @@ func (nopEbpf) UpdateProcData(libpf.InterpreterType, libpf.PID, unsafe.Pointer) 
 
 type traceCapture struct {
 	traces []*libpf.Trace
+	meta   []*samples.TraceEventMeta
 }
 
-func (tc *traceCapture) ReportTraceEvent(trace *libpf.Trace, _ *samples.TraceEventMeta) error {
+func (tc *traceCapture) ReportTraceEvent(trace *libpf.Trace, meta *samples.TraceEventMeta) error {
 	tc.traces = append(tc.traces, trace)
+	tc.meta = append(tc.meta, meta)
 	return nil
 }
 
@@ -138,10 +140,13 @@ func TestKernelFramesUseSharedFrameCacheHit(t *testing.T) {
 		pm.HandleTrace(&libpf.EbpfTrace{
 			NumKernelFrames: 1,
 			FrameData:       []uint64{uint64(address)},
+			SamplePeriod:    1_000_003,
 		}, nil)
 	}
 
 	require.Len(t, capture.traces, 2)
+	require.Len(t, capture.meta, 2)
+	assert.Equal(t, uint64(1_000_003), capture.meta[0].SamplePeriod)
 	require.Len(t, capture.traces[0].Frames, 1)
 	frame := capture.traces[0].Frames[0].Value()
 	assert.Equal(t, libpf.KernelFrame, frame.Type)

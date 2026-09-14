@@ -24,6 +24,7 @@ type TraceEventMeta struct {
 	CPU            uint32
 	ProfileType    *TypeMetadata
 	Value          int64
+	SamplePeriod   uint64
 	PID, TID       libpf.PID
 	SpanID         libpf.APMSpanID
 	TraceID        libpf.APMTraceID
