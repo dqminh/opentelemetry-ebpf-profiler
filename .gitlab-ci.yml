@@ -1,0 +1,8 @@
+stages:
+  - review
+
+include:
+  - component: $CI_SERVER_FQDN/cloudflare/ci/ai/opencode@~latest
+    inputs:
+      stage: review
+      runOnMR: true
