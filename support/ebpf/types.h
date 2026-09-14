@@ -686,6 +686,9 @@ typedef struct Trace {
   // e.g. time in nanoseconds for off-CPU traces
   u64 value;
 
+  // The number of perf events represented by this sample.
+  u64 sample_period;
+
   // The CPU that captured this trace.
   u32 cpu_id;
 

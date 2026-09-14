@@ -124,6 +124,7 @@ typedef struct user_pt_regs bpf_user_pt_regs_t;
 
 struct bpf_perf_event_data {
   bpf_user_pt_regs_t regs;
+  u64 sample_period;
 };
 
 // The following works with clang and gcc.
